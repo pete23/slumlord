@@ -47,8 +47,9 @@
   const RULES = {
     startCash: 50000,
     startRep: 50,
-    goal: 1000000,
-    maxMonths: 120,
+    minYears: 10,
+    maxYears: 50,
+    defaultYears: 10,
     interestRate: 0.075,      // annual, on the bank loan
     creditBase: 40000,
     creditLtv: 0.75,          // share of portfolio value the bank will lend against
@@ -59,6 +60,26 @@
     patchPremium: 1.15,
     startYear: 1987,
   };
+
+  // Net-worth target per game length, from simulated play by a competent
+  // rule-following bot (roughly half of its games reach the target).
+  // Lengths in between are interpolated.
+  const TARGETS = [
+    [10, 1000000],
+    [20, 6000000],
+    [30, 15000000],
+    [40, 23000000],
+    [50, 31000000],
+  ];
+
+  function targetFor(years) {
+    const y = clamp(Math.round(years), RULES.minYears, RULES.maxYears);
+    for (let i = 1; i < TARGETS.length; i++) {
+      const [y0, t0] = TARGETS[i - 1], [y1, t1] = TARGETS[i];
+      if (y <= y1) return round(t0 + (t1 - t0) * (y - y0) / (y1 - y0), 50000);
+    }
+    return TARGETS[TARGETS.length - 1][1];
+  }
 
   const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
@@ -80,6 +101,7 @@
     /**
      * @param {object} [opts]
      * @param {number} [opts.seed]   RNG seed for reproducible games
+     * @param {number} [opts.years]  game length, 10..50 years
      * @param {object} [opts.state]  restore from a previously serialised state
      */
     constructor(opts) {
@@ -88,13 +110,21 @@
         this.s = JSON.parse(JSON.stringify(opts.state));
       } else {
         const seed = (opts.seed != null ? opts.seed : Math.floor(Math.random() * 2 ** 31)) | 0;
-        this.s = this._newState(seed);
+        const years = clamp(Math.round(opts.years || RULES.defaultYears), RULES.minYears, RULES.maxYears);
+        this.s = this._newState(seed, years);
       }
     }
 
     static fromJSON(json) {
       const state = typeof json === 'string' ? JSON.parse(json) : json;
-      if (!state || state.version !== 1) throw new Error('Unrecognised save data');
+      if (!state || (state.version !== 1 && state.version !== 2)) throw new Error('Unrecognised save data');
+      if (state.version === 1) {
+        // v1 saves were always 10-year games.
+        state.version = 2;
+        state.years = 10;
+        state.maxMonths = 120;
+        state.goal = targetFor(10);
+      }
       return new Game({ state });
     }
 
@@ -121,10 +151,13 @@
     }
 
     // --- Setup ---------------------------------------------------------------
-    _newState(seed) {
+    _newState(seed, years) {
       this.s = {
-        version: 1,
+        version: 2,
         seed,
+        years,
+        maxMonths: years * 12,
+        goal: targetFor(years),
         rng: seed,
         month: 0,
         cash: RULES.startCash,
@@ -174,7 +207,7 @@
       });
 
       this._log('You arrive in town with ' + fmt(s.cash) + ' and big ideas.', 'info');
-      this._log('Goal: a net worth of ' + fmt(RULES.goal) + ' within ' + RULES.maxMonths / 12 + ' years.', 'info');
+      this._log('Goal: a net worth of ' + fmt(s.goal) + ' within ' + years + ' years.', 'info');
       s.history.push(this.netWorth());
       return s;
     }
@@ -188,13 +221,15 @@
     get state() { return this.s; }
     get rules() { return RULES; }
     get types() { return TYPES; }
+    get goal() { return this.s.goal; }
+    get maxMonths() { return this.s.maxMonths; }
     get mapSize() { return { width: MAP[0].length, height: MAP.length }; }
 
     dateLabel(month) {
       const m = month == null ? this.s.month : month;
       return MONTHS[m % 12] + ' ' + (RULES.startYear + Math.floor(m / 12));
     }
-    monthsLeft() { return RULES.maxMonths - this.s.month; }
+    monthsLeft() { return this.s.maxMonths - this.s.month; }
     isOver() { return this.s.status !== 'playing'; }
 
     property(id) { return this.s.properties[id] || null; }
@@ -395,10 +430,10 @@
 
       if (s.status === 'playing') {
         const nw = this.netWorth();
-        if (nw >= RULES.goal) {
+        if (nw >= s.goal) {
           s.status = 'won';
           this._log('You are a Rent Baron! Net worth ' + fmt(nw) + ' in ' + s.month + ' months.', 'end');
-        } else if (s.month >= RULES.maxMonths) {
+        } else if (s.month >= s.maxMonths) {
           s.status = 'retired';
           this._log('Time is up. You finish with a net worth of ' + fmt(nw) + '.', 'end');
         }
@@ -416,6 +451,8 @@
         drift = this._range(0.04, 0.08);
         this._log('Property boom: buyers are queueing round the block.', 'good');
       }
+      // Gentle pull towards a long-run level keeps 50-year games from pinning at the cap.
+      drift += (1.15 - s.marketIndex) * 0.006;
       s.marketIndex = clamp(s.marketIndex * (1 + drift), 0.6, 1.9);
     }
 
@@ -598,7 +635,7 @@
     return sign + '£' + Math.round(Math.abs(n)).toLocaleString('en-GB');
   }
 
-  const api = { Game, TYPES, DISTRICTS, RULES, formatMoney: fmt };
+  const api = { Game, TYPES, DISTRICTS, RULES, MAP, targetFor, formatMoney: fmt };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.RentBaron = api;
 })(typeof globalThis !== 'undefined' ? globalThis : this);

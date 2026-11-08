@@ -7,61 +7,75 @@
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <header class="topbar">
-    <h1 class="brand">Rent<span>Baron</span></h1>
+  <header class="screenbar">
+    <h1 class="brand">RENT<span>BARON</span></h1>
     <dl class="stats" id="stats"></dl>
     <div class="top-actions">
-      <button type="button" id="btn-help" class="ghost">Help</button>
-      <button type="button" id="btn-new" class="ghost">New game</button>
+      <button type="button" id="btn-help">Help</button>
+      <button type="button" id="btn-new">New game</button>
       <button type="button" id="btn-end" class="primary" title="Shortcut: Space">End month ▸</button>
     </div>
   </header>
 
   <main class="layout">
-    <section class="panel city" aria-labelledby="city-h">
-      <div class="panel-head">
-        <h2 id="city-h">The town</h2>
+    <section class="win city" aria-labelledby="city-h">
+      <header class="titlebar"><i class="gadget close" aria-hidden="true"></i><h2 id="city-h">Town</h2><i class="gadget depth" aria-hidden="true"></i></header>
+      <div class="win-body">
+        <div class="map" id="map">
+          <canvas id="town" width="320" height="240" tabindex="0"
+            aria-label="Town map. Arrow keys move the cursor, Enter selects a building."></canvas>
+        </div>
         <div class="legend" id="legend"></div>
+        <p class="hint">Lit windows are let. <span class="key own">Orange kerb</span> = yours. <span class="key sale">£ sign</span> = for sale.</p>
       </div>
-      <div class="map" id="map" aria-label="Town map"></div>
-      <p class="hint">Lit windows are occupied units. <span class="tag own">Yours</span> <span class="tag sale">For sale</span></p>
     </section>
 
-    <section class="panel detail" id="detail" aria-live="polite"></section>
-
-    <section class="panel bank" aria-labelledby="bank-h">
-      <h2 id="bank-h">Bank &amp; books</h2>
-      <div id="bank"></div>
-      <form class="bank-form" id="bank-form">
-        <label for="bank-amount">Amount</label>
-        <input id="bank-amount" type="number" min="0" step="1000" inputmode="numeric" placeholder="10000">
-        <button type="submit" name="op" value="borrow">Borrow</button>
-        <button type="submit" name="op" value="repay">Repay</button>
-      </form>
-      <div id="report"></div>
-      <h3>Net worth</h3>
-      <div id="chart" class="chart"></div>
+    <section class="win detail" aria-labelledby="detail-h">
+      <header class="titlebar"><button type="button" class="gadget close" id="detail-close" aria-label="Close inspector"></button><h2 id="detail-h">Inspector</h2><i class="gadget depth" aria-hidden="true"></i></header>
+      <div class="win-body" id="detail" aria-live="polite"></div>
     </section>
 
-    <section class="panel lists" aria-labelledby="lists-h">
-      <h2 id="lists-h" class="sr-only">Properties</h2>
-      <div class="tabs" role="tablist">
-        <button type="button" role="tab" data-tab="portfolio" id="tab-portfolio">Portfolio</button>
-        <button type="button" role="tab" data-tab="market" id="tab-market">For sale</button>
+    <section class="win bank" aria-labelledby="bank-h">
+      <header class="titlebar"><i class="gadget close" aria-hidden="true"></i><h2 id="bank-h">Bank</h2><i class="gadget depth" aria-hidden="true"></i></header>
+      <div class="win-body">
+        <div id="bank"></div>
+        <form class="bank-form" id="bank-form" novalidate>
+          <label for="bank-amount">Amount £</label>
+          <input id="bank-amount" type="number" min="0" step="1000" inputmode="numeric" placeholder="10000">
+          <button type="submit" name="op" value="borrow">Borrow</button>
+          <button type="submit" name="op" value="repay">Repay</button>
+        </form>
+        <div id="report"></div>
+        <h3>Net worth</h3>
+        <canvas id="chart" class="chart" width="160" height="56" role="img"></canvas>
+        <p class="dim" id="chart-note"></p>
       </div>
-      <div id="list" class="table-wrap"></div>
     </section>
 
-    <section class="panel news" aria-labelledby="news-h">
-      <h2 id="news-h">Local news</h2>
-      <ol class="log" id="log"></ol>
+    <section class="win lists" aria-labelledby="lists-h">
+      <header class="titlebar"><i class="gadget close" aria-hidden="true"></i><h2 id="lists-h">Ledger</h2><i class="gadget depth" aria-hidden="true"></i></header>
+      <div class="win-body">
+        <div class="tabs" role="tablist">
+          <button type="button" role="tab" data-tab="portfolio" id="tab-portfolio">Portfolio</button>
+          <button type="button" role="tab" data-tab="market" id="tab-market">For sale</button>
+        </div>
+        <div id="list" class="table-wrap"></div>
+      </div>
+    </section>
+
+    <section class="win news" aria-labelledby="news-h">
+      <header class="titlebar"><i class="gadget close" aria-hidden="true"></i><h2 id="news-h">Gazette</h2><i class="gadget depth" aria-hidden="true"></i></header>
+      <div class="win-body">
+        <ol class="log" id="log"></ol>
+      </div>
     </section>
   </main>
 
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
   <dialog id="dialog">
-    <form method="dialog">
+    <header class="titlebar"><button type="button" class="gadget close" id="dialog-close" aria-label="Close"></button><h2 id="dialog-title">Request</h2><i class="gadget depth" aria-hidden="true"></i></header>
+    <form method="dialog" class="win-body">
       <div id="dialog-body"></div>
       <menu id="dialog-actions"></menu>
     </form>
