@@ -32,6 +32,7 @@ Not needed to play; used to develop the game.
 | `tools/balance.js` | Bot simulator for tuning the economy and targets |
 | `tools/font/glyphs.py` | Source pixels for the `Baron8` font (8×8 per glyph) |
 | `tools/font/build_font.py` | Builds the font and re-embeds it in `style.css` |
+| `docs/design/mods.md` | Why the current rules are too easy, and three composable rule changes to fix it |
 
 ```sh
 npm test                         # engine unit tests (Node 18+)
