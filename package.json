@@ -1,0 +1,15 @@
+{
+  "name": "rent-baron",
+  "version": "1.0.0",
+  "private": true,
+  "description": "A property tycoon game in plain HTML, CSS and JavaScript.",
+  "scripts": {
+    "test": "node --test \"tests/*.test.js\"",
+    "smoke": "node tests/smoke.js",
+    "balance": "node tools/balance.js",
+    "font": "python3 tools/font/build_font.py"
+  },
+  "devDependencies": {
+    "playwright": "1.63.0"
+  }
+}

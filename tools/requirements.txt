@@ -1,0 +1,2 @@
+fonttools>=4.40
+skia-pathops>=0.8
