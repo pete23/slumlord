@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Rent Baron</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="topbar">
+    <h1 class="brand">Rent<span>Baron</span></h1>
+    <dl class="stats" id="stats"></dl>
+    <div class="top-actions">
+      <button type="button" id="btn-help" class="ghost">Help</button>
+      <button type="button" id="btn-new" class="ghost">New game</button>
+      <button type="button" id="btn-end" class="primary" title="Shortcut: Space">End month ▸</button>
+    </div>
+  </header>
+
+  <main class="layout">
+    <section class="panel city" aria-labelledby="city-h">
+      <div class="panel-head">
+        <h2 id="city-h">The town</h2>
+        <div class="legend" id="legend"></div>
+      </div>
+      <div class="map" id="map" aria-label="Town map"></div>
+      <p class="hint">Lit windows are occupied units. <span class="tag own">Yours</span> <span class="tag sale">For sale</span></p>
+    </section>
+
+    <section class="panel detail" id="detail" aria-live="polite"></section>
+
+    <section class="panel bank" aria-labelledby="bank-h">
+      <h2 id="bank-h">Bank &amp; books</h2>
+      <div id="bank"></div>
+      <form class="bank-form" id="bank-form">
+        <label for="bank-amount">Amount</label>
+        <input id="bank-amount" type="number" min="0" step="1000" inputmode="numeric" placeholder="10000">
+        <button type="submit" name="op" value="borrow">Borrow</button>
+        <button type="submit" name="op" value="repay">Repay</button>
+      </form>
+      <div id="report"></div>
+      <h3>Net worth</h3>
+      <div id="chart" class="chart"></div>
+    </section>
+
+    <section class="panel lists" aria-labelledby="lists-h">
+      <h2 id="lists-h" class="sr-only">Properties</h2>
+      <div class="tabs" role="tablist">
+        <button type="button" role="tab" data-tab="portfolio" id="tab-portfolio">Portfolio</button>
+        <button type="button" role="tab" data-tab="market" id="tab-market">For sale</button>
+      </div>
+      <div id="list" class="table-wrap"></div>
+    </section>
+
+    <section class="panel news" aria-labelledby="news-h">
+      <h2 id="news-h">Local news</h2>
+      <ol class="log" id="log"></ol>
+    </section>
+  </main>
+
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+  <dialog id="dialog">
+    <form method="dialog">
+      <div id="dialog-body"></div>
+      <menu id="dialog-actions"></menu>
+    </form>
+  </dialog>
+
+  <script src="game.js"></script>
+  <script src="ui.js"></script>
+</body>
+</html>
