@@ -7,6 +7,19 @@ against them, and reach a net-worth target before time runs out.
 **Play:** open `index.html` in a browser. No server, build step or install
 needed. The game saves itself in the browser's local storage.
 
+## Rules
+
+New games offer three optional rule modules, all on by default (see
+`docs/design/mods.md`):
+
+| | Mod | What it adds |
+|---|---|---|
+| A | Bank moods | Base rate moves in a credit cycle; the bank tests loan-to-value and interest cover monthly, with seizure after six months in breach; fixed-rate deals; the target must be held for 12 months |
+| B | Tenant faces | Five tenant classes with their own rents, wear, churn and arrears; annual rent reviews; letting and arrears policies; evictions that make the papers |
+| C | Bricks & permission | Demolish, build and convert with planning odds; council relations; neighbours and districts respond to the state of their buildings; regeneration and bypass schemes |
+
+All three off is the classic game. Targets are tuned per combination.
+
 ## The game
 
 | File | What it is |
@@ -40,9 +53,10 @@ npm install && npm run smoke     # browser smoke test (installs Playwright;
                                  # run `npx playwright install chromium` once)
 npm run smoke -- --shots out     # ...and save screenshots to ./out
 
-npm run balance                  # bot win rate for 10-50 year games
-npm run balance -- --derive      # median bot net worth by decade, for setting targets
-npm run balance -- --years 20 --seeds 100 --verbose
+npm run balance                  # greedy vs prudent bots, all mods, 10-50 year games
+npm run balance -- --mods AB     # a subset of mods ('none' = classic)
+npm run balance -- --derive --all  # targets for every mod combination (JS to paste)
+npm run balance -- --years 20 --seeds 100 --bot prudent --verbose
 
 pip install -r tools/requirements.txt
 npm run font                     # rebuild Baron8 after editing glyphs.py
@@ -50,10 +64,12 @@ npm run font                     # rebuild Baron8 after editing glyphs.py
 
 ### Tuning the economy
 
-The numbers live in `TYPES`, `DISTRICTS` and `RULES` at the top of
-`game.js`. After changing them, run `npm run balance -- --derive --seeds 60`
-and update the `TARGETS` table so each target sits near the bot's median
-result for that length. That way a competent player wins about half the time.
+The numbers live in `TYPES`, `DISTRICTS`, `CLASSES` and `RULES` at the top
+of `game.js`. After changing them, run `npm run balance -- --derive --all
+--seeds 40` and paste the output over the `TARGETS` table, so each target
+sits near the median of the better bot for that rule set and length. Check
+`npm run balance` afterwards: with all mods on, greedy should lose and go
+bankrupt far more often than prudent.
 
 ### Editing the font
 

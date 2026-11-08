@@ -282,7 +282,7 @@ button.gadget:hover { background: var(--deep); }
 .kvs { margin: 8px 0 0; display: grid; gap: 0; }
 .kv { display: flex; justify-content: space-between; gap: 12px; align-items: center; }
 .kv dt { color: var(--dim); white-space: nowrap; }
-.kv dd { margin: 0; text-align: right; display: flex; align-items: center; gap: 6px; white-space: nowrap; }
+.kv dd { margin: 0; text-align: right; display: flex; flex-wrap: wrap; justify-content: flex-end; align-items: center; gap: 0 6px; min-width: 0; }
 .kv.big dd { color: var(--orange); }
 .kv.pos dd { color: var(--good); }
 .kv.neg dd { color: var(--bad); }
@@ -290,7 +290,7 @@ button.gadget:hover { background: var(--deep); }
 
 .bar {
   display: inline-block;
-  width: 64px;
+  width: 48px;
   height: 12px;
   background: var(--black);
   border: var(--px) solid;
@@ -421,4 +421,57 @@ dialog.guru-box .guru { color: #f00; text-align: center; margin: 8px 0; }
 
 @media (prefers-reduced-motion: reduce) {
   dialog.guru-box { animation: none; }
+}
+
+/* --- Rule mods: notices, tenants, development, council ------------------ */
+
+.notice {
+  border: var(--px) solid var(--orange);
+  background: var(--deep);
+  padding: 4px 8px;
+  margin: 8px 0;
+}
+.notice p { margin: 4px 0; }
+.notice.bad { border-color: var(--bad); }
+.notice.bad b { color: var(--bad); }
+.notice button { margin-top: 4px; }
+p.warn, .warn { color: var(--warn); }
+.kv.warnc dd { color: var(--warn); }
+.kv.cover dt { color: var(--white); }
+
+.stat.alarm dt, .stat.alarm dd { color: #c00; animation: alarm 1s steps(1) infinite; }
+@keyframes alarm { 50% { color: var(--blue); } }
+
+.tenants { margin-top: 12px; padding-top: 8px; border-top: var(--px) solid var(--white); }
+.tenants h3 { margin-top: 0; }
+.chips { display: flex; flex-wrap: wrap; gap: 4px 12px; }
+.chip { display: inline-flex; align-items: center; gap: 6px; }
+.chip i, .legend-item i { flex: none; }
+.chip i { width: 12px; height: 12px; border: var(--px) solid var(--black); }
+.legend br { flex-basis: 100%; content: ""; }
+.policy-row { display: grid; grid-template-columns: 128px minmax(0, 1fr); gap: 8px; align-items: center; margin-top: 4px; }
+.policy-row label { margin: 0; }
+
+.build-table { width: 100%; border-collapse: collapse; margin-top: 4px; }
+.build-table th, .build-table td { padding: 0 4px; }
+.build-table th { position: static; background: none; }
+.build-table button { padding: 0 6px; }
+
+.mod-row { display: grid; grid-template-columns: 24px minmax(0, 1fr); gap: 8px; align-items: start; margin: 6px 0; }
+.mod-row label { color: var(--white); }
+.mod-row input[type=checkbox] {
+  width: 20px; height: 20px; padding: 0; margin: 0;
+  background: var(--black);
+  border: var(--px) solid; border-color: var(--black) var(--white) var(--white) var(--black);
+}
+.mod-row input[type=checkbox]:checked {
+  background: linear-gradient(var(--orange), var(--orange)) center / 8px 8px no-repeat, var(--black);
+}
+
+.key.rate { color: var(--dim); }
+.key.idx { color: var(--peach); }
+#rate-wrap[hidden] { display: none; }
+
+@media (prefers-reduced-motion: reduce) {
+  .stat.alarm dt, .stat.alarm dd { animation: none; }
 }

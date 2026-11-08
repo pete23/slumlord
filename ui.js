@@ -8,7 +8,10 @@
 (function () {
   'use strict';
 
-  const { Game, TYPES, DISTRICTS, RULES, targetFor, formatMoney: money } = window.RentBaron;
+  const {
+    Game, TYPES, DISTRICTS, RULES, CLASSES, POLICIES, ARREARS_POLICIES, MOD_KEYS, MOD_INFO, BUILDABLE,
+    targetFor, formatMoney: money, formatRate: rate,
+  } = window.RentBaron;
   const SAVE_KEY = 'rentbaron.save.v1';
   const PREFS_KEY = 'rentbaron.prefs.v1';
   const LENGTHS = [10, 15, 20, 25, 30, 35, 40, 45, 50];
@@ -21,6 +24,7 @@
     tab: 'portfolio',
     lastStatus: 'playing',
     years: RULES.defaultYears,
+    mods: { bank: true, tenants: true, build: true },
   };
 
   const $ = (sel) => document.querySelector(sel);
@@ -28,6 +32,7 @@
     stats: $('#stats'), map: $('#map'), town: $('#town'), legend: $('#legend'), detail: $('#detail'),
     bank: $('#bank'), bankForm: $('#bank-form'), bankAmount: $('#bank-amount'),
     report: $('#report'), chart: $('#chart'), chartNote: $('#chart-note'), list: $('#list'), log: $('#log'),
+    bankExtra: $('#bank-extra'), rateChart: $('#ratechart'), rateWrap: $('#rate-wrap'),
     toast: $('#toast'), dialog: $('#dialog'), dialogTitle: $('#dialog-title'),
     dialogBody: $('#dialog-body'), dialogActions: $('#dialog-actions'),
   };
@@ -165,6 +170,12 @@
     }
   }
 
+  // Lit-window colours by tenant class (Mod B); arrears glow red.
+  const CLASS_WIN = {
+    family: ['#fd6', '#fa3'], student: ['#d9f', '#a6e'], pro: ['#eef', '#aac'],
+    pensioner: ['#ca6', '#a84'], council: ['#9df', '#6ad'], arrears: ['#f75', '#c43'],
+  };
+
   const POUND = ['.##.', '#...', '###.', '#...', '####'];
   const TREE = ['..###..', '.#####.', '###:###', '##:####', '.#####.', '..###..', '...|...', '...|...'];
 
@@ -234,7 +245,7 @@
     }
 
     // District scenery behind or beside the building.
-    const b = BUILD[p.type];
+    const b = BUILD[p.type] || { w: 30 };
     const bx = ox + Math.floor((TILE - b.w) / 2);
     if (d === 'G' && hash(p.id, 1, 2) < 0.6) {
       const cx = ox + (hash(p.id, 2, 3) < 0.5 ? 2 : TILE - 6);
@@ -249,7 +260,9 @@
       if (space >= 7 && hash(p.id, 5, 5) < 0.6) r.sprite(ox + TILE - 7, oy + GROUND - 8, TREE, { '#': '#373', ':': '#5b4', '|': '#532' });
     }
 
-    drawBuilding(r, g, p, bx, oy);
+    if (p.type === 'lot') drawPlot(r, g, p, ox, oy);
+    else drawBuilding(r, g, p, bx, oy);
+    if (p.build && p.type !== 'lot') scaffold(r, bx - 1, oy + GROUND - b.body - 1, b.w + 2, b.body + 1);
 
     // For-sale board on the pavement.
     if (p.forSale && !p.owned) {
@@ -307,20 +320,24 @@
       }
     }
 
-    // Windows: lit = let, dark = empty, boarded/broken when the place is a wreck.
+    // Windows: lit = let (coloured by tenant class), dark = empty,
+    // boarded/broken when the place is a wreck or a unit is void after eviction.
     const layout = windowLayout(p.type, b);
     const order = layout.map((_, i) => i).sort((a, c) => hash(p.id, a, 1) - hash(p.id, c, 1));
     const lit = new Set(order.slice(0, p.tenants));
     layout.forEach(([wx, wy, ww, wh], i) => {
       const x = bx + wx, y = top + wy;
-      if (lit.has(i)) {
-        r.rect(x, y, ww, wh, '#fd6');
-        r.rect(x, y + wh - 1, ww, 1, '#fa3');
+      const L = p.lets ? p.lets[order[i]] : null;
+      const isLit = p.lets ? !!(L && L.cls) : lit.has(i);
+      if (isLit) {
+        const wc = L ? CLASS_WIN[L.arrears ? 'arrears' : L.cls] : CLASS_WIN.family;
+        r.rect(x, y, ww, wh, wc[0]);
+        r.rect(x, y + wh - 1, ww, 1, wc[1]);
         if (ww > 2 && hash(p.id, i, 4) < 0.5) r.rect(x, y, 1, wh, '#c84');
       } else if (cond < 20 && hash(p.id, i, 5) < 0.5) {
         r.rect(x, y, ww, wh, '#000');
         r.set(x + 1, y, '#9ab');
-      } else if (cond < 35) {
+      } else if (cond < 35 || (L && !L.cls)) {
         r.rect(x, y, ww, wh, '#a74');
         for (let k = 0; k < Math.min(ww, wh); k++) r.set(x + k, y + k, '#642');
       } else {
@@ -356,6 +373,59 @@
       r.rect(fx, fy, 1, 7, '#ddd');
       town.fx.flags.push([fx + 1, fy]);
     }
+  }
+
+  /** Empty plot, planning notice, or a building site in progress (Mod C). */
+  function drawPlot(r, g, p, ox, oy) {
+    // Rubble and weeds on bare earth.
+    for (let y = GROUND - 4; y < GROUND; y++) {
+      for (let x = 2; x < TILE - 2; x++) {
+        const h0 = hash(ox + x, oy + y, 21);
+        if (y === GROUND - 4 && h0 > 0.35) continue;
+        r.set(ox + x, oy + y, h0 < 0.15 ? '#776' : h0 < 0.25 ? '#3a2' : '#543');
+      }
+    }
+    // Hoarding posts.
+    for (let x = 1; x < TILE - 1; x += 6) r.rect(ox + x, oy + GROUND - 6, 1, 6, '#875');
+    r.rect(ox + 1, oy + GROUND - 5, TILE - 2, 1, '#875');
+
+    if (p.build) {
+      const t = BUILD[p.build.to];
+      const done = 1 - p.build.monthsLeft / p.build.months;
+      const hgt = Math.max(3, Math.round(t.body * done));
+      const bx = ox + Math.floor((TILE - t.w) / 2);
+      const top = oy + GROUND - hgt;
+      // Rising walls, dithered to look unfinished.
+      for (let y = 0; y < hgt; y++) {
+        for (let x = 0; x < t.w; x++) {
+          if (BAYER[(y & 3) * 4 + (x & 3)] < 9) r.set(bx + x, top + y, t.c[1]);
+        }
+      }
+      scaffold(r, bx - 1, top - 2, t.w + 2, hgt + 2);
+      if (p.build.to === 'flats' || p.build.to === 'tower') {
+        const cx = ox + TILE - 6;
+        r.rect(cx, oy + 3, 1, GROUND - 3, '#fc0');
+        r.rect(cx - 20, oy + 3, 24, 1, '#fc0');
+        r.rect(cx + 1, oy + 4, 2, 2, '#666');
+        r.rect(cx - 14, oy + 4, 1, 4 + (p.build.monthsLeft % 5), '#ccc');
+      }
+    } else if (p.app || p.refused) {
+      // Planning notice on a post.
+      const sx = ox + 4, sy = oy + GROUND - 13;
+      r.rect(sx + 3, sy + 6, 1, 7, '#ccc');
+      r.rect(sx, sy, 8, 6, '#eee');
+      for (let k = 1; k < 5; k += 2) r.rect(sx + 1, sy + k, 6, 1, '#558');
+      if (p.refused) for (let k = 0; k < 6; k++) { r.set(sx + 1 + k, sy + k, '#d22'); r.set(sx + 6 - k, sy + k, '#d22'); }
+    }
+    if (p.owned) {
+      r.rect(ox + 19, oy + GROUND - 13, 1, 7, '#ddd');
+      town.fx.flags.push([ox + 20, oy + GROUND - 13]);
+    }
+  }
+
+  function scaffold(r, x, y, w, hgt) {
+    for (let j = 0; j < hgt; j += 4) r.rect(x, y + j, w, 1, '#a86');
+    for (let i = 0; i < w; i += 5) r.rect(x + i, y, 1, hgt, '#a86');
   }
 
   function windowLayout(type, b) {
@@ -395,6 +465,21 @@
     for (const [x, y] of town.fx.water) {
       const o = (f >> 1) % 4;
       px(x + o, y, '#48c', 2, 1);
+    }
+
+    // Council schemes: blinking outline (cyan = regeneration, red = bypass).
+    if (ui.game.state.schemes && (f >> 2) & 1) {
+      for (const sc of ui.game.state.schemes) {
+        ctx.fillStyle = sc.kind === 'regen' ? '#4cf' : '#f44';
+        for (const id of sc.tiles) {
+          const q = ui.game.property(id);
+          const x0 = q.x * TILE, y0 = q.y * TILE;
+          for (let i = 0; i < TILE; i += 4) {
+            ctx.fillRect(x0 + i, y0 + 1, 2, 1); ctx.fillRect(x0 + i, y0 + TILE - 2, 2, 1);
+            ctx.fillRect(x0 + 1, y0 + i, 1, 2); ctx.fillRect(x0 + TILE - 2, y0 + i, 1, 2);
+          }
+        }
+      }
     }
 
     const tileRect = (id) => {
@@ -476,6 +561,7 @@
   function render() {
     const g = ui.game;
     renderStats(g);
+    renderLegend(g);
     drawTown(g);
     renderDetail(g);
     renderBank(g);
@@ -485,7 +571,7 @@
     el.bankForm.querySelectorAll('button, input').forEach(b => { b.disabled = g.isOver(); });
     $('#btn-end').disabled = g.isOver();
     store(SAVE_KEY, g.toJSON());
-    store(PREFS_KEY, { tab: ui.tab, selected: ui.selected, years: ui.years });
+    store(PREFS_KEY, { tab: ui.tab, selected: ui.selected, years: ui.years, mods: ui.mods });
 
     if (g.state.status !== ui.lastStatus) {
       ui.lastStatus = g.state.status;
@@ -500,16 +586,31 @@
       ['Date', g.dateLabel(), g.monthsLeft() + ' mo left'],
       ['Cash', money(s.cash), s.cash < 0 ? 'OVERDRAWN' : ''],
       ['Loan', money(s.loan), money(g.monthlyInterest()) + '/mo'],
-      ['Worth', money(nw), pct(Math.max(0, nw) / g.goal) + ' of ' + short(g.goal)],
-      ['Rep', Math.round(s.reputation) + '/100', s.reputation >= 60 ? 'well liked' : s.reputation >= 35 ? 'tolerated' : 'notorious'],
     ];
+    if (g.hasMod('bank')) {
+      const hist = s.rateHistory, prev = hist[Math.max(0, hist.length - 7)];
+      items.push(['Base rate', rate(g.baseRate()), g.baseRate() > prev ? '▲ rising' : g.baseRate() < prev ? '▼ falling' : '– steady']);
+    }
+    const hold = g.holdRequired();
+    items.push(['Worth', money(nw), hold && g.holdProgress()
+      ? 'holding ' + g.holdProgress() + '/' + hold + ' mo'
+      : pct(Math.max(0, nw) / g.goal) + ' of ' + short(g.goal)]);
+    items.push(['Rep', Math.round(s.reputation) + '/100', s.reputation >= 60 ? 'well liked' : s.reputation >= 35 ? 'tolerated' : 'notorious']);
     el.stats.replaceChildren(...items.map(([k, v, sub]) =>
-      h('div', { class: 'stat' }, h('dt', null, k), h('dd', null, v), sub ? h('dd', { class: 'sub' }, sub) : null)));
+      h('div', { class: 'stat' + (k === 'Loan' && s.covenant ? ' alarm' : '') }, h('dt', null, k), h('dd', null, v), sub ? h('dd', { class: 'sub' }, sub) : null)));
   }
 
-  function renderLegend() {
-    el.legend.replaceChildren(...Object.entries(DISTRICTS).map(([k, d]) =>
-      h('span', { class: 'legend-item' }, h('i', { style: 'background:' + GROUND_C[k][0] }), d.name)));
+  function renderLegend(g) {
+    const items = Object.entries(DISTRICTS).map(([k, d]) =>
+      h('span', { class: 'legend-item' }, h('i', { style: 'background:' + GROUND_C[k][0] }), d.name));
+    if (g && g.hasMod('tenants')) {
+      items.push(h('br'));
+      for (const c of Object.keys(CLASSES)) {
+        items.push(h('span', { class: 'legend-item' }, h('i', { style: 'background:' + CLASS_WIN[c][0] }), CLASSES[c].label));
+      }
+      items.push(h('span', { class: 'legend-item' }, h('i', { style: 'background:' + CLASS_WIN.arrears[0] }), 'In arrears'));
+    }
+    el.legend.replaceChildren(...items);
   }
 
   function row(label, value, extra) {
@@ -517,7 +618,14 @@
   }
 
   function bar(value, cls) {
-    return h('span', { class: 'bar ' + (cls || '') }, h('span', { style: 'width:' + Math.round(value * 100) + '%' }));
+    return h('span', { class: 'bar ' + (cls || '') }, h('span', { style: 'width:' + Math.round(clampN(value, 0, 1) * 100) + '%' }));
+  }
+  const clampN = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+
+  function btn(label, cost, onclick, opts) {
+    opts = opts || {};
+    return h('button', { type: 'button', class: opts.cls || null, disabled: opts.disabled || ui.game.isOver(), title: opts.title || null, onclick },
+      label, cost != null ? h('span', { class: 'cost' }, cost) : null);
   }
 
   function renderDetail(g) {
@@ -526,24 +634,29 @@
       el.detail.replaceChildren(
         h('p', null, 'Click a building on the map, or a row in the ledger, to inspect it.'),
         h('p', { class: 'dim' }, 'Rough areas are cheap and pay high yields but rot fast and attract trouble. ' +
-          'Posh areas cost more, rent for less against the price, and reward repairs.'));
+          'Posh areas cost more, rent for less against the price, and reward repairs.'),
+        g.hasMod('bank') ? h('p', { class: 'dim' }, 'Watch the base rate. Cheap money inflates prices; dear money tightens the bank\'s limits and can trigger a covenant breach.') : null);
       return;
     }
+    if (p.type === 'lot') { el.detail.replaceChildren(...plotDetail(g, p).filter(Boolean)); return; }
 
     const t = TYPES[p.type];
     const d = g.district(p.district);
+    const local = g.localDesirability(p);
     const mr = g.marketRent(p);
     const parts = [
       h('h3', { class: 'addr' }, p.address),
       h('p', { class: 'dim' }, t.label + ' · ' + d.name + ' · ' + t.units + ' unit' + (t.units > 1 ? 's' : '')),
+      p.build ? h('p', { class: 'notice' }, 'Conversion to ' + TYPES[p.build.to].label.toLowerCase() + ': ' + p.build.monthsLeft + ' months left.') : null,
       h('dl', { class: 'kvs' },
         row('Condition', h('span', null, bar(p.condition / 100, p.condition < 30 ? 'bad' : p.condition < 60 ? 'warn' : 'good'),
           ' ' + conditionLabel(p.condition))),
-        row('Tenants', h('span', null, bar(p.tenants / p.units), ' ' + p.tenants + '/' + p.units)),
-        row('Area', h('span', null, bar(Math.min(1, d.desirability / 1.9)), ' ' + d.desirability.toFixed(2))),
+        row('Tenants', h('span', null, bar(p.units ? p.tenants / p.units : 0), ' ' + p.tenants + '/' + p.units)),
+        row(g.hasMod('build') ? 'Street' : 'Area', h('span', null, bar(Math.min(1, local / 1.9)), ' ' + local.toFixed(2) +
+          (g.hasMod('build') && Math.abs(local - d.desirability) >= 0.01 ? (local > d.desirability ? ' ▲' : ' ▼') : ''))),
         row('Value', money(g.value(p))),
         row('Market rent', money(mr) + '/unit'),
-        row('Your rent', money(p.rent) + '/unit')),
+        row(g.hasMod('tenants') ? 'Asking rent' : 'Your rent', money(p.rent) + '/unit')),
     ];
 
     if (p.owned) {
@@ -552,49 +665,149 @@
         row('Running cost', money(g.runningCost(p)) + '/mo'),
         row('Net (now)', signed(net) + '/mo', net < 0 ? 'neg' : 'pos'),
         row('Paid', money(p.boughtFor) + ' ' + g.dateLabel(p.boughtMonth))));
-      parts.push(rentControls(g, p, mr));
+      if (g.hasMod('tenants') && !p.build) parts.push(tenantPanel(g, p));
+      if (!p.build) parts.push(rentControls(g, p, mr));
       parts.push(h('div', { class: 'actions' },
-        h('button', {
-          type: 'button', disabled: p.condition >= 100 || g.isOver(),
-          onclick: () => act(g.repair(p.id, 'patch')),
-          title: 'Fix the worst of it: +' + g.rules.patchPoints + ' condition',
-        }, 'Patch', h('span', { class: 'cost' }, p.condition >= 100 ? '—' : money(g.patchCost(p)))),
-        h('button', {
-          type: 'button', disabled: p.condition >= 100 || g.isOver(),
-          onclick: () => act(g.repair(p.id, 'refurb')),
-          title: 'Restore fully; some tenants move out during the works',
-        }, 'Refurb', h('span', { class: 'cost' }, p.condition >= 100 ? '—' : money(g.refurbCost(p)))),
-        h('button', {
-          type: 'button', class: 'danger', disabled: g.isOver(),
-          onclick: () => confirmSell(g, p),
-        }, 'Sell', h('span', { class: 'cost' }, money(g.saleProceeds(p))))));
+        btn('Patch', p.condition >= 100 ? '—' : money(g.patchCost(p)), () => act(g.repair(p.id, 'patch')),
+          { disabled: p.condition >= 100 || !!p.build, title: 'Fix the worst of it: +' + g.rules.patchPoints + ' condition' }),
+        btn('Refurb', p.condition >= 100 ? '—' : money(g.refurbCost(p)), () => act(g.repair(p.id, 'refurb')),
+          { disabled: p.condition >= 100 || !!p.build, title: 'Restore fully; some tenants move out during the works' }),
+        btn('Sell', money(g.saleProceeds(p)), () => confirmSell(g, p), { cls: 'danger', disabled: !!p.build })));
+      if (g.hasMod('build')) parts.push(...developPanel(g, p));
     } else if (p.forSale) {
-      const price = g.askingPrice(p);
-      const shortfall = price - g.state.cash;
+      parts.push(...buyPanel(g, p, mr));
+    } else {
+      parts.push(h('p', { class: 'dim' }, p.cooldown > 0 ? 'Recently sold. The new owner is not selling yet.' : 'Not on the market. Listings change monthly.'));
+    }
+    el.detail.replaceChildren(...parts.filter(Boolean));
+  }
+
+  function buyPanel(g, p, mr) {
+    const price = g.askingPrice(p);
+    const shortfall = price - g.state.cash;
+    const parts = [];
+    if (p.units) {
       const estNet = mr * p.units * g.expectedOccupancy(p, mr) - g.runningCost(p);
       parts.push(h('dl', { class: 'kvs' },
         row('Asking price', money(price), 'big'),
         row('Est. net', signed(Math.round(estNet)) + '/mo'),
         row('Yield', ((estNet * 12) / price * 100).toFixed(1) + '%/yr')));
-      const actions = [h('button', {
-        type: 'button', class: 'primary', disabled: shortfall > 0 || g.isOver(),
-        onclick: () => act(g.buy(p.id)),
-      }, 'Buy', h('span', { class: 'cost' }, money(price)))];
-      if (shortfall > 0 && !g.isOver()) {
-        const need = Math.ceil(shortfall / 1000) * 1000;
-        const can = need <= g.availableCredit();
-        actions.push(h('button', {
-          type: 'button', disabled: !can,
-          onclick: () => { if (act(g.borrow(need)).ok) act(g.buy(p.id)); },
-          title: can ? '' : 'The bank will not lend that much',
-        }, 'Borrow & buy', h('span', { class: 'cost' }, '+' + money(need))));
-      }
-      parts.push(h('div', { class: 'actions' }, actions));
+      if (p.condition < 15) parts.push(h('p', { class: 'warn' }, 'Derelict: nobody will rent it until it is repaired.'));
     } else {
-      parts.push(h('p', { class: 'dim' }, p.cooldown > 0 ? 'Recently sold. The new owner is not selling yet.' : 'Not on the market. Listings change monthly.'));
+      parts.push(h('dl', { class: 'kvs' }, row('Asking price', money(price), 'big')));
     }
+    const actions = [btn(p.units ? 'Buy' : 'Buy plot', money(price), () => act(g.buy(p.id)), { cls: 'primary', disabled: shortfall > 0 })];
+    if (shortfall > 0 && !g.isOver()) {
+      const need = Math.ceil(shortfall / 1000) * 1000;
+      const can = need <= g.availableCredit() && !g.state.covenant;
+      actions.push(btn('Borrow & buy', '+' + money(need), () => { if (act(g.borrow(need)).ok) act(g.buy(p.id)); },
+        { disabled: !can, title: can ? '' : 'The bank will not lend that much' }));
+    }
+    parts.push(h('div', { class: 'actions' }, actions));
+    return parts;
+  }
 
-    el.detail.replaceChildren(...parts);
+  function tenantPanel(g, p) {
+    const sum = g.tenantSummary(p.id);
+    const chips = Object.entries(sum.classes).filter(([, n]) => n).map(([c, n]) =>
+      h('span', { class: 'chip' }, h('i', { style: 'background:' + CLASS_WIN[c][0] }), CLASSES[c].label + ' ' + n));
+    const policy = h('select', { id: 'policy-select', 'aria-label': 'Letting policy',
+      onchange: (e) => act(g.setPolicy(p.id, e.target.value)) },
+      Object.entries(POLICIES).map(([k, v]) => h('option', { value: k, selected: p.policy === k ? true : null }, v.label)));
+    const arrears = h('select', { id: 'arrears-select', 'aria-label': 'Arrears policy',
+      onchange: (e) => act(g.setArrearsPolicy(p.id, e.target.value)) },
+      Object.entries(ARREARS_POLICIES).map(([k, v]) => h('option', { value: k, selected: p.arrearsPolicy === k ? true : null }, v)));
+    const mix = g.applicantMix(p.id).filter(a => a.eligible && a.accept > 0)
+      .sort((a, b) => b.share * b.accept - a.share * a.accept)
+      .map(a => CLASSES[a.cls].label.toLowerCase()).slice(0, 3);
+    return h('div', { class: 'tenants' },
+      h('h3', null, 'Tenants'),
+      chips.length ? h('div', { class: 'chips' }, chips) : h('p', { class: 'dim' }, 'No sitting tenants.'),
+      h('dl', { class: 'kvs' },
+        sum.arrears ? row('In arrears', sum.arrears + ' (' + money(sum.owed) + ' owed)', 'neg') : null,
+        sum.stale ? row('Stale rents', sum.stale + ' below market') : null,
+        sum.voids ? row('Void units', String(sum.voids)) : null,
+        sum.nextReview != null ? row('Next review', g.dateLabel(sum.nextReview)) : null),
+      h('div', { class: 'policy-row' }, h('label', { for: 'policy-select' }, 'Letting'), policy),
+      h('div', { class: 'policy-row' }, h('label', { for: 'arrears-select' }, 'Arrears'), arrears),
+      h('p', { class: 'dim' }, mix.length ? 'Likely applicants: ' + mix.join(', ') + '.' : 'Nobody will apply at this rent and condition.'));
+  }
+
+  function developPanel(g, p) {
+    const out = [];
+    const conv = g.conversionFor(p);
+    const busy = g.isBusy(p);
+    const blocked = p.blockedUntil > g.state.month;
+    out.push(h('h3', null, 'Development'));
+    if (p.app) out.push(h('p', { class: 'notice' }, (p.app.appeal ? 'Appeal' : 'Planning application') + ': ' +
+      (p.app.kind === 'convert' ? 'convert to ' : 'build ') + TYPES[p.app.to].label.toLowerCase() + ', ' +
+      Math.round(p.app.chance * 100) + '% likely. Decision ' + g.dateLabel(p.app.decideAt) + '.'));
+    if (p.refused) out.push(refusalBox(g, p));
+    const actions = [];
+    if (conv) {
+      actions.push(btn('Convert', money(g.conversionCost(p)) + ' · ' + Math.round(g.planningChance(p, conv.to) * 100) + '%',
+        () => act(g.convert(p.id)), { disabled: busy || blocked,
+          title: 'Apply to convert to ' + TYPES[conv.to].label.toLowerCase() + ' (' + conv.months + ' months; sitting tenants displaced). Fee ' + money(g.applicationFee()) }));
+    }
+    actions.push(btn('Demolish', money(g.demolishCost(p)), () => confirmDemolish(g, p), { cls: 'danger', disabled: busy }));
+    out.push(h('div', { class: 'actions' }, actions));
+    return out;
+  }
+
+  function refusalBox(g, p) {
+    const chance = Math.min(0.9, g.planningChance(p, p.refused.to) * 1.5);
+    return h('div', { class: 'notice bad' },
+      h('p', null, 'Planning refused for ' + TYPES[p.refused.to].label.toLowerCase() + '. Blocked until ' + g.dateLabel(p.blockedUntil) + '.'),
+      btn('Appeal', money(g.appealFee()) + ' · ' + Math.round(chance * 100) + '%', () => act(g.appeal(p.id)), { title: 'Six months; better odds than a fresh application' }));
+  }
+
+  function plotDetail(g, p) {
+    const d = g.district(p.district);
+    const parts = [
+      h('h3', { class: 'addr' }, p.address),
+      h('p', { class: 'dim' }, (p.build ? 'Building site' : 'Vacant lot') + ' · ' + d.name),
+      h('dl', { class: 'kvs' },
+        row('Street', g.localDesirability(p).toFixed(2)),
+        row('Value', money(g.value(p)))),
+    ];
+    if (!p.owned) {
+      if (p.forSale) parts.push(...buyPanel(g, p, 0));
+      else parts.push(h('p', { class: 'dim' }, 'Not for sale. A developer may build here.'));
+      return parts;
+    }
+    if (p.build) {
+      const done = 1 - p.build.monthsLeft / p.build.months;
+      parts.push(h('dl', { class: 'kvs' },
+        row('Building', TYPES[p.build.to].label),
+        row('Progress', h('span', null, bar(done, 'good'), ' ' + p.build.monthsLeft + ' mo left')),
+        row('Paid so far', money(p.build.paid) + ' of ' + money(p.build.cost))));
+      return parts;
+    }
+    if (p.app) {
+      parts.push(h('p', { class: 'notice' }, (p.app.appeal ? 'Appeal' : 'Application') + ' for ' + TYPES[p.app.to].label.toLowerCase() +
+        ': ' + Math.round(p.app.chance * 100) + '% likely. Decision ' + g.dateLabel(p.app.decideAt) + '.'));
+      return parts;
+    }
+    if (p.refused) parts.push(refusalBox(g, p));
+    const blocked = p.blockedUntil > g.state.month;
+    parts.push(h('h3', null, 'Build'), h('p', { class: 'dim' }, 'Application fee ' + money(g.applicationFee()) +
+      '; decision in ' + g.rules.planningMonths + ' months. Costs are paid monthly during the works.'));
+    const mi = g.state.marketIndex * g.priceLevel();
+    parts.push(h('table', { class: 'build-table' },
+      h('thead', null, h('tr', null, ['Type', 'Cost', 'Months', 'Value', 'Odds', ''].map(c => h('th', null, c)))),
+      h('tbody', null, BUILDABLE.map(t => {
+        const cost = g.buildCost(p, t);
+        const value = TYPES[t].baseValue * g.localDesirability(p) * mi;
+        const ch = g.planningChance(p, t);
+        return h('tr', null,
+          h('td', null, TYPES[t].label),
+          h('td', { class: 'num' }, short(cost)),
+          h('td', { class: 'num' }, String(g.buildMonths(t))),
+          h('td', { class: 'num' + (value > cost ? ' pos' : ' neg') }, short(value)),
+          h('td', { class: 'num' }, Math.round(ch * 100) + '%'),
+          h('td', null, btn('Apply', null, () => act(g.build(p.id, t)), { disabled: blocked })));
+      }))));
+    return parts;
   }
 
   function rentControls(g, p, mr) {
@@ -616,7 +829,7 @@
     const apply = (e) => { e.preventDefault(); act(g.setRent(p.id, input.value)); };
     const nudge = (k) => { input.value = Math.max(0, Math.round((Number(input.value) || 0) * k / 5) * 5); update(); };
     return h('form', { class: 'rent', onsubmit: apply, novalidate: true },
-      h('label', { for: 'rent-input' }, 'Rent per unit £'),
+      h('label', { for: 'rent-input' }, g.hasMod('tenants') ? 'Asking rent £ (sitting tenants at review)' : 'Rent per unit £'),
       h('div', { class: 'rent-row' },
         h('button', { type: 'button', onclick: () => nudge(0.9), 'aria-label': 'Lower rent 10%' }, '↓'),
         input,
@@ -628,13 +841,53 @@
 
   function renderBank(g) {
     const s = g.state;
-    el.bank.replaceChildren(h('dl', { class: 'kvs' },
+    const bank = g.hasMod('bank');
+    const cover = g.interestCover();
+    const coverTxt = Number.isFinite(cover) ? cover.toFixed(2) + '×' : '—';
+    const rows = [
       row('Cash', money(s.cash), s.cash < 0 ? 'neg' : ''),
       row('Loan', money(s.loan)),
       row('Limit', money(g.creditLimit())),
-      row('Can borrow', money(g.availableCredit())),
-      row('Interest', (g.rules.interestRate * 100).toFixed(1) + '%/yr'),
-      row('Portfolio', money(g.portfolioValue()))));
+      row('Can borrow', money(s.covenant ? 0 : g.availableCredit())),
+    ];
+    if (bank) {
+      const ltv = g.ltv();
+      rows.push(
+        row('LTV', h('span', null, bar(Number.isFinite(ltv) ? ltv : 1, ltv > g.maxLtv() ? 'bad' : ltv > g.maxLtv() - 0.1 ? 'warn' : 'good'),
+          ' ' + (Number.isFinite(ltv) ? pct(ltv) : '—') + ' / ' + pct(g.maxLtv()))),
+        row('Interest cover', coverTxt, 'cover ' + (cover < g.rules.minCover ? 'neg' : cover < 2 ? 'warnc' : 'pos')),
+        row('Variable', rate(g.loanRate())),
+        s.fixed ? row('Fixed', money(s.fixed.balance) + ' @ ' + rate(s.fixed.rate) + ' to ' + g.dateLabel(s.fixed.until)) : null);
+    } else {
+      rows.push(row('Interest', rate(g.loanRate()) + '/yr'));
+    }
+    rows.push(row('Portfolio', money(g.portfolioValue())));
+    el.bank.replaceChildren(h('dl', { class: 'kvs' }, rows));
+
+    const extra = [];
+    if (bank) {
+      if (s.covenant) {
+        extra.push(h('div', { class: 'notice bad' },
+          h('b', null, 'COVENANT BREACH'),
+          h('p', null, (s.covenant.reason === 'cover' ? 'Interest cover below ' + g.rules.minCover + '×.' : 'Loan above the bank\'s limit.') +
+            ' Repay or sell by ' + g.dateLabel(s.covenant.deadline) + ' or the bank sells for you at ' + Math.round(g.rules.seizeDiscount * 100) + '% of value.')));
+      }
+      const fixBtns = s.fixed
+        ? [btn('Break fix', money(Math.round(s.fixed.balance * g.rules.breakFee)), () => act(g.breakFix()))]
+        : g.rules.fixYears.map(y => btn('Fix ' + y + 'y', rate(g.fixedRateOffer()), () => act(g.fixRate(y)),
+            { disabled: s.loan <= 0, title: 'Lock the current loan at this rate for ' + y + ' years' }));
+      extra.push(h('div', { class: 'actions' }, fixBtns));
+    }
+    if (g.hasMod('build')) {
+      extra.push(h('h3', null, 'Council'),
+        h('dl', { class: 'kvs' }, row('Relations', h('span', null, bar(s.councilRelations / 100, s.councilRelations < 30 ? 'bad' : ''), ' ' + Math.round(s.councilRelations)))),
+        h('div', { class: 'actions' },
+          btn('Mayor\'s fund', money(5000 * Math.round(g.priceLevel())), () => act(g.donate(5000 * Math.round(g.priceLevel()))),
+            { title: 'Better planning odds. The more you give, the likelier a scandal.' })),
+        ...s.schemes.map(sc => h('p', { class: 'notice' + (sc.kind === 'bypass' ? ' bad' : '') },
+          (sc.kind === 'regen' ? 'Regeneration of ' : 'Bypass through ') + sc.name + ' in ' + g.dateLabel(sc.due) + '.')));
+    }
+    el.bankExtra.replaceChildren(...extra.filter(Boolean));
 
     const r = s.lastReport;
     if (!r) { el.report.replaceChildren(h('p', { class: 'dim' }, 'No accounts yet.')); return; }
@@ -642,44 +895,60 @@
       h('h3', null, 'Last month'),
       h('dl', { class: 'kvs' },
         row('Rent', money(r.rent), 'pos'),
+        r.arrears ? row('Unpaid', money(r.arrears), 'neg') : null,
         row('Upkeep', '−' + money(r.upkeep)),
         row('Tax', '−' + money(r.tax)),
         r.incidents ? row('Incidents', '−' + money(r.incidents), 'neg') : null,
+        r.construction ? row('Works', '−' + money(r.construction)) : null,
         row('Interest', '−' + money(r.interest)),
         row('Net', signed(r.net), r.net < 0 ? 'neg total' : 'pos total'),
-        row('Tenants', '+' + r.moveIns + ' / −' + r.moveOuts)));
+        row('Tenants', '+' + r.moveIns + ' / −' + r.moveOuts + (r.evictions ? ' (' + r.evictions + ' evicted)' : ''))));
+  }
+
+  /** Stepped pixel line chart into a small canvas. */
+  function lineChart(cv, series, opts) {
+    const ctx = cv.getContext('2d');
+    const W = cv.width, H = cv.height;
+    ctx.fillStyle = '#000'; ctx.fillRect(0, 0, W, H);
+    const n = Math.max(opts.span, ...series.map(s => s.data.length - 1));
+    const x = (i) => 1 + Math.round(i / n * (W - 3));
+    ctx.fillStyle = '#028';
+    for (let i = 0; i <= 10; i++) for (let yy = 0; yy < H; yy += 2) ctx.fillRect(x(n * i / 10), yy, 1, 1);
+    for (const s of series) {
+      const y = (v) => H - 2 - Math.round((v - s.min) / (s.max - s.min || 1) * (H - 4));
+      if (s.line != null) { ctx.fillStyle = s.lineColour; for (let xx = 0; xx < W; xx += 4) ctx.fillRect(xx, y(s.line), 2, 1); }
+      ctx.fillStyle = s.colour;
+      let prev = null;
+      s.data.forEach((v, i) => {
+        const px = x(i), py = y(v);
+        if (prev) {
+          ctx.fillRect(prev[0], Math.min(prev[1], py), 1, Math.abs(py - prev[1]) + 1);
+          ctx.fillRect(prev[0], py, px - prev[0] + 1, 1);
+        } else ctx.fillRect(px, py, 1, 1);
+        prev = [px, py];
+      });
+      if (prev && s.dot) { ctx.fillStyle = '#fff'; ctx.fillRect(prev[0] - 1, prev[1] - 1, 3, 3); }
+    }
   }
 
   function renderChart(g) {
-    const cv = el.chart, ctx = cv.getContext('2d');
-    const W = cv.width, H = cv.height;
-    const hist = g.state.history;
+    const s = g.state;
+    const hist = s.history;
     const goal = g.goal;
-    const max = Math.max(goal, ...hist), min = Math.min(0, ...hist);
-    const n = Math.max(g.maxMonths, hist.length - 1);
-    const x = (i) => 1 + Math.round(i / n * (W - 3));
-    const y = (v) => H - 2 - Math.round((v - min) / (max - min || 1) * (H - 4));
-    ctx.fillStyle = '#000'; ctx.fillRect(0, 0, W, H);
-    ctx.fillStyle = '#028';
-    for (let i = 0; i <= 10; i++) for (let yy = 0; yy < H; yy += 2) ctx.fillRect(x(n * i / 10), yy, 1, 1);
-    ctx.fillStyle = '#4e4';
-    for (let xx = 0; xx < W; xx += 4) ctx.fillRect(xx, y(goal), 2, 1);
-    if (min < 0) { ctx.fillStyle = '#555'; ctx.fillRect(0, y(0), W, 1); }
-    ctx.fillStyle = '#f80';
-    let prev = null;
-    hist.forEach((v, i) => {
-      const px = x(i), py = y(v);
-      if (prev) {
-        const [qx, qy] = prev;
-        ctx.fillRect(qx, Math.min(qy, py), 1, Math.abs(py - qy) + 1);
-        ctx.fillRect(qx, py, px - qx + 1, 1);
-      } else ctx.fillRect(px, py, 1, 1);
-      prev = [px, py];
-    });
-    ctx.fillStyle = '#fff';
-    if (prev) ctx.fillRect(prev[0] - 1, prev[1] - 1, 3, 3);
-    cv.setAttribute('aria-label', 'Net worth chart: now ' + money(hist[hist.length - 1]) + ', goal ' + money(goal));
+    lineChart(el.chart, [{
+      data: hist, colour: '#f80', dot: true, min: Math.min(0, ...hist), max: Math.max(goal, ...hist), line: goal, lineColour: '#4e4',
+    }], { span: g.maxMonths });
+    el.chart.setAttribute('aria-label', 'Net worth chart: now ' + money(hist[hist.length - 1]) + ', goal ' + money(goal));
     el.chartNote.textContent = 'Green dashes: ' + short(goal) + ' goal';
+
+    el.rateWrap.hidden = !g.hasMod('bank');
+    if (g.hasMod('bank')) {
+      lineChart(el.rateChart, [
+        { data: s.indexHistory, colour: '#fc8', min: 0.5, max: 2 },
+        { data: s.rateHistory, colour: '#8af', dot: true, min: 0.03, max: 0.17, line: g.rules.rateTarget, lineColour: '#555' },
+      ], { span: g.maxMonths });
+      el.rateChart.setAttribute('aria-label', 'Base rate ' + rate(g.baseRate()) + ' and house price index ' + s.marketIndex.toFixed(2));
+    }
   }
 
   function renderList(g) {
@@ -707,16 +976,19 @@
       const t = TYPES[p.type];
       const d = g.district(p.district);
       let cells;
+      const label = p.type === 'lot' ? (p.build ? 'Site: ' + TYPES[p.build.to].label : 'Vacant lot') : t.label + (p.build ? ' (works)' : '');
+      const arrears = p.lets ? p.lets.filter(l => l && l.arrears).length : 0;
+      const let_ = p.units ? p.tenants + '/' + p.units + (arrears ? '!' : '') : '—';
       if (own) {
         const net = g.projectedNet(p);
-        cells = [p.address, d.name, t.label, p.tenants + '/' + p.units, money(p.rent),
-          Math.round(p.condition), short(g.value(p)), h('span', { class: net < 0 ? 'neg' : 'pos' }, signed(net))];
+        cells = [p.address, d.name, label, let_, p.units ? money(p.rent) : '—',
+          p.units ? Math.round(p.condition) : '—', short(g.value(p)), h('span', { class: net < 0 ? 'neg' : 'pos' }, signed(net))];
       } else {
         const price = g.askingPrice(p);
         const mr = g.marketRent(p);
-        const est = mr * p.units * g.expectedOccupancy(p, mr) - g.runningCost(p);
-        cells = [p.address, d.name, t.label, p.tenants + '/' + p.units, Math.round(p.condition),
-          short(price), (est * 12 / price * 100).toFixed(1) + '%'];
+        const est = p.units ? mr * p.units * g.expectedOccupancy(p, mr) - g.runningCost(p) : 0;
+        cells = [p.address, d.name, label, let_, p.units ? Math.round(p.condition) : '—',
+          short(price), p.units ? (est * 12 / price * 100).toFixed(1) + '%' : '—'];
       }
       return h('tr', {
         class: ui.selected === p.id ? 'selected' : '', tabindex: 0, dataset: { id: p.id },
@@ -756,39 +1028,77 @@
     ], [['Cancel'], ['Sell', 'danger', () => act(g.sell(p.id))]]);
   }
 
+  function confirmDemolish(g, p) {
+    const n = p.tenants;
+    dialog('Demolish', [
+      h('p', null, 'Knock down ' + p.address + ' for ' + money(g.demolishCost(p)) + '? The plot is clear next month and you can apply to build.'),
+      n ? h('p', { class: 'warn' }, n + ' household' + (n === 1 ? '' : 's') + ' will be displaced. Families and pensioners make the papers.') : null,
+    ], [['Cancel'], ['Demolish', 'danger', () => act(g.demolish(p.id))]]);
+  }
+
   function showHelp() {
     const g = ui.game;
+    const hold = g.holdRequired();
     dialog('How to play', [
       h('p', null, 'Start with ' + money(g.rules.startCash) + '. Reach a net worth of ' + money(g.goal) +
-        ' within ' + g.state.years + ' years.'),
+        ' within ' + g.state.years + ' years' + (hold ? ', and hold it for ' + hold + ' months' : '') + '.'),
       h('ul', null,
         h('li', null, h('b', null, 'Buy'), ' buildings with a £ board. Tenants come with them.'),
         h('li', null, h('b', null, 'Rent'), ' above market and tenants leave; far above and they strike. Cheap rent fills the place and helps your reputation.'),
         h('li', null, h('b', null, 'Repair'), '. Buildings decay monthly. Wrecks lose value, catch fire and get fined.'),
         h('li', null, h('b', null, 'Borrow'), ' against your portfolio. Run out of cash and credit and the bailiffs sell your buildings cheap.'),
         h('li', null, h('b', null, 'Sell'), ' at market value minus a ' + Math.round(g.rules.sellFee * 100) + '% fee.')),
+      g.hasMod('bank') ? h('div', null, h('h3', null, 'Bank moods'), h('ul', null,
+        h('li', null, 'The base rate moves in a cycle of several years. Cheap money inflates prices; dear money deflates them, with a lag.'),
+        h('li', null, 'Every month the bank checks your loan against its limit (', h('b', null, 'LTV'), ', which tightens as rates rise) and your ', h('b', null, 'interest cover'), ' (at least ' + g.rules.minCover + '×).'),
+        h('li', null, 'Breach either and you get ' + g.rules.covenantMonths + ' months to fix it, then the bank sells your cheapest buildings at ' + Math.round(g.rules.seizeDiscount * 100) + '% of value.'),
+        h('li', null, 'Fix your rate for 2 or 5 years at base + ' + rate(g.rules.fixedMargin) + '. It protects your interest, not your LTV.'))) : null,
+      g.hasMod('tenants') ? h('div', null, h('h3', null, 'Tenant faces'), h('ul', null,
+        h('li', null, 'Window colours show who lives there. Students pay well and wreck the place; professionals pay most but need good buildings and a good name; pensioners stay for ever at low rents; council placements are steady, until an inspection fails.'),
+        h('li', null, 'Changing rent sets the asking rent. Sitting tenants move to it at their annual review, and may leave.'),
+        h('li', null, 'Arrears rise when rates are high and prices fall. Tolerate, chase or evict; evicting families and pensioners makes the papers.'))) : null,
+      g.hasMod('build') ? h('div', null, h('h3', null, 'Bricks & permission'), h('ul', null,
+        h('li', null, 'Demolish, build on lots, or convert terraces to bedsits and back. Each needs planning; odds depend on the area, your reputation and council relations.'),
+        h('li', null, 'Buildings affect their street: wrecks drag neighbours down, good buildings lift them. Districts drift with the state of their stock.'),
+        h('li', null, 'Watch for council schemes: regeneration buys at 130%, a bypass knocks 20% off.'))) : null,
       h('p', { class: 'dim' }, 'Space ends the month. Arrow keys + Enter work on the map. The game saves itself.'),
     ], [['OK', 'primary']]);
   }
 
   function newGameDialog(firstRun) {
-    const select = h('select', { id: 'years-select' }, LENGTHS.map(y =>
-      h('option', { value: y, selected: y === ui.years ? true : null }, y + ' years, goal ' + short(targetFor(y)))));
+    const mods = Object.assign({}, ui.mods);
+    const select = h('select', { id: 'years-select' });
+    const fill = () => {
+      const keep = Number(select.value) || ui.years;
+      select.replaceChildren(...LENGTHS.map(y =>
+        h('option', { value: y, selected: y === keep ? true : null }, y + ' years, goal ' + short(targetFor(y, mods)))));
+    };
     const note = h('p', { class: 'dim' });
     const update = () => {
       const y = Number(select.value);
-      note.textContent = 'Reach ' + money(targetFor(y)) + ' net worth by ' + (RULES.startYear + y) + '.';
+      note.textContent = 'Reach ' + money(targetFor(y, mods)) + ' net worth by ' + (RULES.startYear + y) +
+        (mods.bank ? ' and hold it for ' + RULES.holdMonths + ' months.' : '.');
     };
+    const boxes = MOD_KEYS.map(k => {
+      const id = 'mod-' + k;
+      const cb = h('input', { type: 'checkbox', id, checked: mods[k] ? true : null,
+        onchange: (e) => { mods[k] = e.target.checked; fill(); update(); } });
+      return h('div', { class: 'mod-row' }, cb, h('label', { for: id }, h('b', null, MOD_INFO[k].label), ' ', MOD_INFO[k].blurb));
+    });
     select.addEventListener('change', update);
+    fill();
     update();
     dialog(firstRun ? 'Welcome to Rent Baron' : 'New game', [
       firstRun ? h('p', null, 'Buy property, rent it out, keep it standing, get rich.') : h('p', null, 'Your current game will be lost.'),
       h('label', { for: 'years-select' }, 'Game length'),
       select,
       note,
+      h('h3', null, 'Rules'),
+      ...boxes,
+      h('p', { class: 'dim' }, 'All off is the classic game. Targets adjust to the rules you pick.'),
     ], [
       firstRun ? null : ['Cancel'],
-      ['Start', 'primary', () => { ui.years = Number(select.value); newGame(); }],
+      ['Start', 'primary', () => { ui.years = Number(select.value); ui.mods = mods; newGame(); }],
     ].filter(Boolean));
   }
 
@@ -806,7 +1116,7 @@
     dialog(won ? 'Success' : 'Retired', [
       h('p', { class: 'big' }, won ? 'You are a Rent Baron!' : 'Time to hang up the keys.'),
       h('p', null, won
-        ? 'You reached ' + money(nw) + ' in ' + s.month + ' months.'
+        ? 'You reached ' + money(nw) + (g.holdRequired() ? ' and held it' : '') + ' in ' + s.month + ' months.'
         : 'Net worth ' + money(nw) + ', ' + pct(Math.max(0, nw) / g.goal) + ' of the ' + money(g.goal) + ' goal.'),
     ], [['Look around'], ['New game', 'primary', () => newGameDialog(false)]]);
   }
@@ -830,7 +1140,7 @@
   }
 
   function newGame() {
-    ui.game = new Game({ years: ui.years });
+    ui.game = new Game({ years: ui.years, mods: ui.mods });
     ui.selected = null;
     ui.cursor = 0;
     ui.lastStatus = 'playing';
@@ -912,10 +1222,10 @@
 
   function init() {
     bind();
-    renderLegend();
     const saved = load(SAVE_KEY);
     const prefs = load(PREFS_KEY) || {};
     if (LENGTHS.includes(prefs.years)) ui.years = prefs.years;
+    if (prefs.mods && typeof prefs.mods === 'object') for (const k of MOD_KEYS) ui.mods[k] = !!prefs.mods[k];
     if (saved) {
       try { ui.game = Game.fromJSON(saved); } catch (e) { forget(SAVE_KEY); }
     }
@@ -926,7 +1236,7 @@
       ui.lastStatus = ui.game.state.status;
       render();
     } else {
-      ui.game = new Game({ years: ui.years });
+      ui.game = new Game({ years: ui.years, mods: ui.mods });
       ui.tab = 'market';
       render();
       newGameDialog(true);

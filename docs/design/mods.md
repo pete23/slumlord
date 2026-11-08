@@ -411,3 +411,58 @@ paid}`, `derelict`. New actions: `demolish(id)`, `build(id, type)`,
 - **A flat higher interest rate.** Shown above to produce a grind.
 - **Auctions for purchases.** A good mechanic, but it only matters once
   money is scarce (A) or supply is contested (rivals). Revisit after A.
+
+---
+
+## 6. Implementation notes
+
+All three mods are implemented in `game.js`, each behind a per-game flag
+(`new Game({ mods: { bank, tenants, build } })`). New games default to all on;
+the new-game requester has a checkbox for each. With all three off the rules
+are exactly the classic game, and v1/v2 saves load as classic games.
+
+### Where the implementation differs from the design above
+
+| Design | Implemented | Why |
+|---|---|---|
+| A2: cycle emerges from market↔rate coupling | An explicit credit cycle drives the rate target: random 6–10 year period, 3.5–6.5 point amplitude, plus a small market-heat term and rare shocks. Games start at a random phase. | The purely emergent version either pinned rates at 16% for a decade or never cycled. The explicit cycle is readable and its amplitude is controllable. Coupling back into prices (`rateCoupling` 0.30) is kept, so prices boom and bust with a lag. |
+| A6: LTV floor 55% | 50% | 55% did not squeeze the greedy strategy enough. |
+| A7: interest cover is a gauge only | It is also a covenant: cover below 1.25× is a breach, same as LTV | Real lenders test both; it makes rising rates bite even when prices hold. |
+| — | Under Mod A the target must be **held for 12 months** to win | Otherwise maximum leverage simply touched the target at the top of a bubble and won before the squeeze arrived. |
+| — | Under Mod A a price level (inflation) tracks the base rate, about 2.5% a year on average | Gives B's stale rents something to fall behind, and erodes debt in real terms (a reason to borrow when money is cheap). |
+| B1: council-placed in any letting | Council placements only under the "Council placements" policy, and only in districts below 1.1 desirability | Otherwise "anyone" policies silently filled with tenants paying 0.8× market. |
+| B: classes | Students, families, professionals, pensioners, council-placed, with the ceilings, wear, arrears and churn in `CLASSES` | Applicant rate 0.4 × reputation factor per empty unit per month; acceptance falls linearly from the class rent ceiling. Below condition 15 nobody applies. |
+| C1: build cost 0.7× base value | 0.85×, not scaled by desirability; work in progress counts at 60% of spend in net worth | Bricks cost the same everywhere, so building pays in good areas and is a bet in poor ones. |
+| C | Developers occasionally build on lots nobody owns; schemes (C7) implemented | Keeps the town changing in long games. |
+
+### Measured results (`npm run balance -- --mods ABC --seeds 40`)
+
+Two scripted strategies: **greedy** (the old dominant play: borrow 70% of
+available credit for anything cash-positive, never fix, never sell) and
+**prudent** (reads the cycle: leverage 0.3–0.7 depending on rate level and
+direction, fixes when money is cheap, sells to de-lever, cures covenant
+breaches, picks council placements where they pay, builds where finished value
+beats cost).
+
+| Length | Greedy won | Greedy bankrupt | Prudent won | Prudent bankrupt |
+|---|---|---|---|---|
+| 10y | 43% | 18% | 35% | 0% |
+| 20y | 15% | 63% | 53% | 0% |
+| 30y | 10% | 75% | 50% | 0% |
+| 40y | 15% | 80% | 53% | 3% |
+| 50y | 15% | 85% | 50% | 8% |
+
+From 20 years up this meets the acceptance test in §2 for the full game.
+
+### Known gaps
+
+- **Mod A alone** flips the medians (20y: prudent £5.7M vs greedy £5.3M, greedy
+  bankrupt 15%) but does not reach "greedy wins < 10%": with only one system,
+  a lucky cycle phase still rewards maximum leverage. The full ABC game does.
+- **10-year games** remain a sprint: one credit cycle barely fits, so greedy
+  wins slightly more often than prudent, at much higher risk of bankruptcy
+  and a lower median.
+- **B or C alone** do not remove the leverage exploit, as predicted in §5.
+- Targets come from the median of whichever bot does better under each rule
+  set (greedy without A, prudent with it). The classic table is unchanged.
+  Re-derive with `npm run balance -- --derive --all` after changing rules.

@@ -13,13 +13,19 @@ const path = require('path');
 const fs = require('fs');
 const { pathToFileURL } = require('url');
 const { chromium } = require('playwright');
+const { targetFor } = require(path.join(__dirname, '..', 'game.js'));
+const shortMoney = (n) => n >= 1e6 ? '£' + (n / 1e6).toFixed(n >= 1e7 ? 0 : 1) + 'M' : '£' + Math.round(n / 1e3) + 'k';
 
 const ROOT = path.join(__dirname, '..');
 const URL = pathToFileURL(path.join(ROOT, 'index.html')).href;
 const shotsIdx = process.argv.indexOf('--shots');
 const SHOTS = shotsIdx > 0 ? path.resolve(process.argv[shotsIdx + 1] || 'screenshots') : null;
 
-const VIEWPORTS = [['desktop', { width: 1440, height: 1000 }], ['phone', { width: 390, height: 844 }]];
+// Desktop plays with all rule mods (the default); phone plays the classic game.
+const VIEWPORTS = [
+  ['desktop', { width: 1440, height: 1000 }, 'ABC'],
+  ['phone', { width: 390, height: 844 }, ''],
+];
 
 async function priceOf(row) {
   const t = (await row.locator('td').nth(5).textContent()).replace(/[£,]/g, '');
@@ -31,24 +37,32 @@ async function run() {
   const browser = await chromium.launch();
   const failures = [];
   try {
-    for (const [name, viewport] of VIEWPORTS) {
+    for (const [name, viewport, sig] of VIEWPORTS) {
       const page = await browser.newPage({ viewport });
       const errors = [];
       page.on('pageerror', e => errors.push(e.message));
       page.on('console', m => { if (m.type() === 'error') errors.push(m.text()); });
 
       await page.goto(URL);
-      // First run shows the new-game requester.
+      // First run shows the new-game requester with rule toggles.
+      for (const [k, letter] of [['bank', 'A'], ['tenants', 'B'], ['build', 'C']]) {
+        const box = page.locator('#mod-' + k);
+        if ((await box.isChecked()) !== sig.includes(letter)) await box.click();
+      }
       await page.selectOption('#years-select', '20');
       await page.click('dialog button.primary');
       const goal = await page.textContent('#stats');
-      if (!goal.includes('£6.0M')) failures.push(`${name}: 20-year goal not shown`);
+      const want = shortMoney(targetFor(20, sig));
+      if (!goal.includes(want)) failures.push(`${name}: 20-year goal ${want} not shown`);
+      if (sig.includes('A') !== goal.includes('Base rate')) failures.push(`${name}: base rate shown/hidden wrongly`);
 
       // Buy the cheapest listing.
       await page.click('#tab-market');
       const rows = page.locator('#list tbody tr');
       let best = 0, bestPrice = Infinity;
       for (let i = 0; i < await rows.count(); i++) {
+        const cells = rows.nth(i).locator('td');
+        if ((await cells.nth(2).textContent()).includes('lot') || Number(await cells.nth(4).textContent()) < 20) continue;
         const p = await priceOf(rows.nth(i));
         if (p < bestPrice) { bestPrice = p; best = i; }
       }

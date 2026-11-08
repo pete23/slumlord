@@ -45,10 +45,16 @@
           <button type="submit" name="op" value="borrow">Borrow</button>
           <button type="submit" name="op" value="repay">Repay</button>
         </form>
+        <div id="bank-extra"></div>
         <div id="report"></div>
         <h3>Net worth</h3>
         <canvas id="chart" class="chart" width="160" height="56" role="img"></canvas>
         <p class="dim" id="chart-note"></p>
+        <div id="rate-wrap" hidden>
+          <h3>Base rate &amp; prices</h3>
+          <canvas id="ratechart" class="chart" width="160" height="56" role="img"></canvas>
+          <p class="dim"><span class="key rate">Blue</span> base rate, <span class="key idx">peach</span> house prices.</p>
+        </div>
       </div>
     </section>
 
