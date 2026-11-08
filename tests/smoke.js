@@ -103,6 +103,40 @@ async function run() {
       console.log(`${name}: done`);
       await page.close();
     }
+    // Text mode: 80x32 screen, menu-driven, shares the save with the graphical UI.
+    {
+      const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
+      const errors = [];
+      page.on('pageerror', e => errors.push(e.message));
+      page.on('console', m => { if (m.type() === 'error') errors.push(m.text()); });
+      // Start a game in the graphical UI, play two months, then switch to text mode.
+      await page.goto(URL);
+      await page.click('dialog button.primary');
+      await page.click('#btn-end');
+      await page.click('#btn-end');
+      const gfxDate = (await page.textContent('.stat dd')).trim();
+      await page.click('a[href="text.html"]');
+      await page.waitForSelector('#screen');
+      const screen = () => page.evaluate(() => document.getElementById('screen').textContent);
+      const lines = (await screen()).split('\n');
+      if (lines.length !== 32 || lines.some(l => l.length !== 80)) failures.push('text: screen is not 80x32');
+      if (!(await screen()).includes('Main menu')) failures.push('text: no main menu shown');
+      if (!lines[0].includes(gfxDate)) failures.push(`text: did not resume the shared save (expected ${gfxDate})`);
+      const before = (await screen()).split('\n')[0];
+      await page.keyboard.press(' ');
+      if ((await screen()).split('\n')[0] === before) failures.push('text: Space did not end the month');
+      for (const key of ['m', 'ArrowRight', 'Enter', 'Escape', 'Escape', 'p', 'Escape', 'f', 'Escape', 'b', 'Escape', 'a', 'Escape', 'z', 'Escape', 'h', 'Escape']) {
+        await page.keyboard.press(key);
+      }
+      if (!(await screen()).includes('Main menu')) failures.push('text: menu navigation did not return to main menu');
+      // Mouse: clicking an option works.
+      await page.locator('#screen [data-k="B"]').first().click();
+      if (!(await screen()).includes('Bank')) failures.push('text: clicking a menu option failed');
+      if (SHOTS) await page.screenshot({ path: path.join(SHOTS, 'text.png') });
+      for (const e of errors) failures.push('text: console error: ' + e);
+      console.log('text: done');
+      await page.close();
+    }
   } finally {
     await browser.close();
   }

@@ -1,0 +1,52 @@
+/*
+ * Rent Baron — text mode. An 80x32 character screen (640x256 "hi-res"
+ * pixels) using the Baron8 font at 1:1, scaled with tall 1:2 pixels the way
+ * a hi-res display stretched them on a 4:3 monitor.
+ */
+
+:root {
+  --pointer: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='22' height='26' viewBox='0 0 11 13' shape-rendering='crispEdges'%3E%3Cpath d='M0 0h2v1h1v1h1v1h1v1h1v1h1v1h1v1h1v1H6v1h1v2H6v1H5v-2H4V9H3v1H2v1H1v1H0z' fill='%23000'/%3E%3Cpath d='M1 2h1v1h1v1h1v1h1v1h1v1h1v1H5v2H4V9H3V8H2v1H1z' fill='%23e52'/%3E%3Cpath d='M1 2h1v1H1z' fill='%23fc8'/%3E%3C/svg%3E") 0 0, default;
+  color-scheme: dark;
+}
+
+html, body { margin: 0; height: 100%; }
+
+body {
+  background: #000;
+  cursor: var(--pointer);
+  overflow-x: hidden;
+}
+
+#wrap {
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  padding: 8px;
+  box-sizing: border-box;
+}
+
+.monitor {
+  overflow: hidden;
+  background: #05a;
+  box-shadow: 0 0 0 4px #222, 0 0 0 6px #444;
+}
+
+#screen {
+  margin: 0;
+  width: 640px;
+  height: 256px;
+  overflow: hidden;
+  font: 8px/8px "Baron8", ui-monospace, monospace;
+  -webkit-font-smoothing: none;
+  font-smooth: never;
+  white-space: pre;
+  color: #fff;
+  background: #05a;
+  transform-origin: 0 0;
+  outline: none;
+  cursor: var(--pointer);
+  user-select: none;
+}
+
+#screen .opt { cursor: var(--pointer); }
+#screen .opt:hover { filter: brightness(1.35); }

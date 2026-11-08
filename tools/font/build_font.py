@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build the Baron8 bitmap font from glyphs.py and embed it in style.css.
+"""Build the Baron8 bitmap font from glyphs.py and embed it in font.css.
 
 Each '#' in a glyph becomes one font pixel (128 font units). Pixel runs are
 unioned into clean outlines so the font renders without seams.
@@ -82,7 +82,7 @@ def build():
 def main():
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument('--ttf', help='also write the raw .ttf to this path')
-    ap.add_argument('--css', default=str(ROOT / 'style.css'), help='stylesheet to update')
+    ap.add_argument('--css', default=str(ROOT / 'font.css'), help='stylesheet to update')
     args = ap.parse_args()
 
     for ch, rows in G.items():
